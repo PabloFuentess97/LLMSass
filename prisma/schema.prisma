@@ -1,0 +1,337 @@
+// AI Node Control SaaS — Prisma schema
+// Postgres 16. All tenant-scoped models carry tenantId and (tenantId, …) indexes.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity ----------
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String
+  name         String?
+  avatarUrl    String?
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+  apiKeys      ApiKey[]
+  sessions     Session[]
+}
+
+model Tenant {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  createdAt     DateTime       @default(now())
+  memberships   Membership[]
+  apiKeys       ApiKey[]
+  nodes         Node[]
+  agents        Agent[]
+  conversations Conversation[]
+  subscription  Subscription?
+  usageEvents   UsageEvent[]
+  webhooks      Webhook[]
+  auditEvents   AuditEvent[]
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      Role     @default(MEMBER)
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String
+  userId     String
+  name       String
+  hash       String    @unique
+  lastFour   String
+  scopes     String[]
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  refreshTokenHash String   @unique
+  userAgent        String?
+  ip               String?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Billing ----------
+
+enum PlanInterval {
+  MONTH
+  YEAR
+}
+
+model Plan {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  name          String
+  priceCents    Int
+  interval      PlanInterval
+  limits        Json
+  subscriptions Subscription[]
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+model Subscription {
+  id               String             @id @default(cuid())
+  tenantId         String             @unique
+  planId           String
+  status           SubscriptionStatus @default(TRIALING)
+  currentPeriodEnd DateTime?
+  stripeCustomerId String?
+  stripeSubId      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan             Plan               @relation(fields: [planId], references: [id])
+}
+
+enum UsageMetric {
+  TOKENS
+  REQUESTS
+  NODE_HOURS
+}
+
+model UsageEvent {
+  id         String      @id @default(cuid())
+  tenantId   String
+  metric     UsageMetric
+  value      Int
+  agentId    String?
+  nodeId     String?
+  occurredAt DateTime    @default(now())
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, metric, occurredAt])
+}
+
+// ---------- Infrastructure ----------
+
+enum NodeStatus {
+  REGISTERED
+  ACTIVE
+  BUSY
+  PAUSED
+  INACTIVE
+  ERROR
+}
+
+model Node {
+  id         String       @id @default(cuid())
+  tenantId   String
+  name       String
+  endpoint   String
+  controlUrl String?
+  status     NodeStatus   @default(REGISTERED)
+  capacity   Json
+  tags       String[]
+  lastSeenAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agents     Agent[]
+  metrics    NodeMetric[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+}
+
+model NodeMetric {
+  id              String   @id @default(cuid())
+  nodeId          String
+  cpuPct          Float
+  ramPct          Float
+  gpuPct          Float?
+  latencyMs       Int
+  tokensProcessed Int
+  at              DateTime @default(now())
+  node            Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([nodeId, at])
+}
+
+// ---------- Agents ----------
+
+enum AgentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Agent {
+  id            String         @id @default(cuid())
+  tenantId      String
+  name          String
+  role          String
+  systemPrompt  String
+  model         String
+  nodeId        String?
+  temperature   Float          @default(0.7)
+  tools         String[]
+  memory        Json?
+  limits        Json?
+  status        AgentStatus    @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  node          Node?          @relation(fields: [nodeId], references: [id])
+  versions      AgentVersion[]
+  conversations Conversation[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+}
+
+model AgentVersion {
+  id        String   @id @default(cuid())
+  agentId   String
+  config    Json
+  createdBy String
+  createdAt DateTime @default(now())
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+}
+
+// ---------- Conversations ----------
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  TOOL
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  tenantId  String
+  agentId   String
+  title     String?
+  createdBy String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent     Agent     @relation(fields: [agentId], references: [id])
+  messages  Message[]
+
+  @@index([tenantId, updatedAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  tokensIn       Int          @default(0)
+  tokensOut      Int          @default(0)
+  toolCall       Json?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments    Attachment[]
+
+  @@index([conversationId, createdAt])
+}
+
+enum AttachmentKind {
+  IMAGE
+  FILE
+}
+
+model Attachment {
+  id        String         @id @default(cuid())
+  messageId String
+  kind      AttachmentKind
+  url       String
+  sizeBytes Int
+  mime      String
+  message   Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Integrations ----------
+
+model Webhook {
+  id             String            @id @default(cuid())
+  tenantId       String
+  url            String
+  events         String[]
+  secret         String
+  active         Boolean           @default(true)
+  lastDeliveryAt DateTime?
+  createdAt      DateTime          @default(now())
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries     WebhookDelivery[]
+
+  @@index([tenantId])
+}
+
+model WebhookDelivery {
+  id            String    @id @default(cuid())
+  webhookId     String
+  event         String
+  payload       Json
+  status        String
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime?
+  responseCode  Int?
+  responseBody  String?
+  createdAt     DateTime  @default(now())
+  webhook       Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, status])
+}
+
+// ---------- Governance ----------
+
+model AuditEvent {
+  id           String   @id @default(cuid())
+  tenantId     String
+  actorId      String?
+  action       String
+  resourceType String
+  resourceId   String
+  metadata     Json?
+  at           DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, at])
+}

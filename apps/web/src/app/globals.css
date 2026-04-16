@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 230 24% 7%;
+  --bg-subtle: 230 22% 9%;
+  --bg-card: 230 22% 11%;
+  --fg: 220 20% 98%;
+  --fg-muted: 220 10% 66%;
+  --border: 230 16% 18%;
+  --accent-from: 245 80% 62%;
+  --accent-via: 275 75% 62%;
+  --accent-to: 320 80% 62%;
+}
+
+.light {
+  --bg: 220 20% 98%;
+  --bg-subtle: 220 20% 96%;
+  --bg-card: 0 0% 100%;
+  --fg: 230 24% 10%;
+  --fg-muted: 230 10% 40%;
+  --border: 220 14% 88%;
+}
+
+html,
+body {
+  background: hsl(var(--bg));
+  color: hsl(var(--fg));
+  min-height: 100%;
+  font-feature-settings: "ss01", "cv01";
+}
+
+/* Glassmorphism helper */
+.glass {
+  background: hsla(var(--bg-card) / 0.6);
+  backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.36);
+}
+
+/* Animated gradient ring on focus */
+.accent-ring {
+  background-image: linear-gradient(
+    135deg,
+    hsl(var(--accent-from)),
+    hsl(var(--accent-via)) 50%,
+    hsl(var(--accent-to))
+  );
+}
