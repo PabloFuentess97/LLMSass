@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AI Node Control — Dashboard</title>
+<style>
+  :root{
+    --bg: hsl(230 24% 7%);
+    --bg-subtle: hsl(230 22% 9%);
+    --bg-card: hsl(230 22% 11%);
+    --fg: hsl(220 20% 98%);
+    --fg-muted: hsl(220 10% 66%);
+    --border: hsl(230 16% 18%);
+    --active: hsl(142 76% 45%);
+    --busy: hsl(38 92% 55%);
+    --paused: hsl(220 14% 70%);
+    --error: hsl(0 72% 55%);
+    --grad: linear-gradient(135deg, hsl(245 80% 62%), hsl(275 75% 62%) 50%, hsl(320 80% 62%));
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  body{
+    background:
+      radial-gradient(60% 60% at 12% 0%, hsla(245 80% 62% / .18), transparent 60%),
+      radial-gradient(60% 50% at 100% 0%, hsla(320 80% 62% / .14), transparent 55%),
+      radial-gradient(45% 45% at 50% 100%, hsla(275 75% 62% / .10), transparent 60%),
+      var(--bg);
+    min-height:100vh;
+  }
+  a{color:inherit;text-decoration:none}
+  kbd{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px}
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+
+  /* layout */
+  .shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+  .sidebar{
+    border-right:1px solid var(--border);
+    background:hsla(230 22% 9% / .6);
+    backdrop-filter:blur(12px);
+    position:relative;
+  }
+  .brand{display:flex;align-items:center;gap:8px;height:64px;padding:0 20px;font-weight:600;font-size:14px;letter-spacing:-.01em}
+  .brand .dot{width:22px;height:22px;border-radius:6px;background:var(--grad);box-shadow:0 8px 32px rgba(0,0,0,.36)}
+  .nav{padding:8px 12px;font-size:14px}
+  .nav a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;color:var(--fg-muted);margin-bottom:2px}
+  .nav a:hover{background:var(--bg-card);color:var(--fg)}
+  .nav a.active{background:var(--bg-card);color:var(--fg)}
+  .nav a.active .pip{width:6px;height:6px;border-radius:999px;background:var(--grad)}
+  .pip{width:6px;height:6px;border-radius:999px;background:transparent}
+  .plan-card{position:absolute;left:12px;right:12px;bottom:16px;padding:12px;border-radius:12px;
+    background:hsla(230 22% 11% / .7);border:1px solid var(--border);font-size:12px;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.36)}
+  .plan-card .row{display:flex;justify-content:space-between;align-items:center}
+  .badge{border:1px solid var(--border);border-radius:6px;padding:2px 8px;color:var(--fg-muted)}
+  .bar{height:6px;border-radius:999px;background:var(--bg-subtle);overflow:hidden;margin-top:8px}
+  .bar > i{display:block;height:100%;background:var(--grad);border-radius:999px}
+
+  .main{display:flex;flex-direction:column;min-height:100vh}
+  .topbar{display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 24px;border-bottom:1px solid var(--border)}
+  .search{display:flex;align-items:center;gap:8px;width:480px;padding:8px 12px;border:1px solid var(--border);background:var(--bg-card);border-radius:10px;color:var(--fg-muted);font-size:14px}
+  .search .grow{flex:1}
+  .search kbd{border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+  .topright{display:flex;align-items:center;gap:12px;font-size:14px}
+  .iconbtn{border:1px solid var(--border);border-radius:8px;padding:4px 8px;background:transparent;color:var(--fg-muted);cursor:pointer;position:relative}
+  .iconbtn .red{position:absolute;top:-3px;right:-3px;width:8px;height:8px;border-radius:999px;background:var(--busy)}
+  .avatar{width:32px;height:32px;border-radius:999px;background:var(--grad)}
+
+  .content{padding:24px;display:flex;flex-direction:column;gap:24px}
+  .titlerow{display:flex;align-items:flex-end;justify-content:space-between}
+  h1{font-size:24px;letter-spacing:-.02em;font-weight:600;margin:0}
+  .sub{color:var(--fg-muted);font-size:14px;margin-top:4px}
+  .btn{padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--fg-muted);font-size:14px;cursor:pointer}
+  .btn.primary{background:var(--grad);color:#fff;border:0;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,.36)}
+
+  .glass{background:hsla(230 22% 11% / .65);backdrop-filter:blur(16px) saturate(140%);border:1px solid var(--border);border-radius:18px;box-shadow:0 8px 32px rgba(0,0,0,.36)}
+  .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .grid-3{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+  .grid-3b{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+
+  .kpi{padding:16px;position:relative;overflow:hidden}
+  .kpi .label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted)}
+  .kpi .val{margin-top:6px;font-size:28px;font-weight:600;letter-spacing:-.02em;display:flex;align-items:baseline;gap:8px}
+  .kpi .val small{font-size:13px;color:var(--fg-muted);font-weight:400}
+  .kpi .trend{margin-top:6px;font-size:12px;color:var(--active)}
+  .kpi.featured{box-shadow:0 0 0 1px transparent,0 8px 32px rgba(0,0,0,.36);
+    background:
+      linear-gradient(hsla(230 22% 11% / .85),hsla(230 22% 11% / .85)) padding-box,
+      var(--grad) border-box;
+    border:1px solid transparent;
+  }
+
+  .panel{padding:20px}
+  .panel header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .panel h3{font-size:14px;font-weight:500;margin:0}
+  .panel .hint{font-size:12px;color:var(--fg-muted);margin-top:2px}
+  .legend{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--fg-muted)}
+  .sw{display:inline-block;width:8px;height:8px;border-radius:2px}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  thead{background:hsla(230 22% 9% / .6);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-muted)}
+  th{padding:10px 12px;text-align:left;font-weight:500}
+  td{padding:14px 12px;border-top:1px solid var(--border);vertical-align:middle}
+  .tbl-wrap{border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .pillstatus{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:999px;padding:2px 10px;font-size:12px}
+  .dot{width:8px;height:8px;border-radius:999px;display:inline-block}
+  .dot.active{background:var(--active);box-shadow:0 0 0 4px hsla(142 76% 45% / .15)}
+  .dot.busy{background:var(--busy);box-shadow:0 0 0 4px hsla(38 92% 55% / .15)}
+  .dot.paused{background:var(--paused)}
+  .dot.error{background:var(--error)}
+  .resbar{display:flex;align-items:center;gap:8px}
+  .resbar .b{width:96px;height:6px;border-radius:999px;background:var(--bg-subtle);overflow:hidden}
+  .resbar .b i{display:block;height:100%;background:var(--grad)}
+  .resbar .v{font-size:12px;color:var(--fg-muted)}
+
+  /* live feed */
+  ul.feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;font-size:14px}
+  ul.feed li{display:flex;gap:12px}
+  ul.feed .pin{width:8px;height:8px;border-radius:999px;margin-top:6px;flex:none}
+  ul.feed .meta{font-size:12px;color:var(--fg-muted);margin-top:2px}
+
+  /* donut + status legend */
+  .status-row{display:flex;align-items:center;gap:24px}
+  .status-row ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px;font-size:14px}
+  .status-row li{display:flex;align-items:center;gap:10px}
+
+  /* live tag */
+  .livetag{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--fg-muted)}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span> AI Node Control</div>
+    <nav class="nav">
+      <a class="active" href="#"><span class="pip"></span>Dashboard</a>
+      <a href="#"><span class="pip"></span>Nodes</a>
+      <a href="#"><span class="pip"></span>Agents</a>
+      <a href="#"><span class="pip"></span>Chat</a>
+      <a href="#"><span class="pip"></span>API Keys</a>
+      <a href="#"><span class="pip"></span>Billing</a>
+      <a href="#"><span class="pip"></span>Team</a>
+      <a href="#"><span class="pip"></span>Settings</a>
+    </nav>
+    <div class="plan-card">
+      <div class="row"><span style="color:var(--fg-muted)">Plan · Pro</span><span class="badge">42%</span></div>
+      <div class="bar"><i style="width:42%"></i></div>
+      <a style="display:inline-block;margin-top:8px;color:var(--fg-muted)" href="#">Upgrade →</a>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="search">
+        <span style="opacity:.7">⌕</span>
+        <span class="grow">Search nodes, agents, conversations…</span>
+        <kbd>⌘K</kbd>
+      </div>
+      <div class="topright">
+        <button class="iconbtn">◐</button>
+        <button class="iconbtn">🔔<span class="red"></span></button>
+        <span class="badge">Acme ▾</span>
+        <div class="avatar"></div>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- title -->
+      <div class="titlerow">
+        <div>
+          <h1>Overview</h1>
+          <div class="sub">Live activity across your AI infrastructure.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn">Last 7 days ▾</button>
+          <button class="btn primary">+ New agent</button>
+        </div>
+      </div>
+
+      <!-- KPI ROW -->
+      <section class="grid-4">
+        <div class="glass kpi featured">
+          <div class="label">Nodes</div>
+          <div class="val">12 <small>/ 20</small></div>
+          <div class="trend">+2 this week</div>
+        </div>
+        <div class="glass kpi">
+          <div class="label">Agents</div>
+          <div class="val">7 <small>active</small></div>
+          <div class="trend">+1</div>
+        </div>
+        <div class="glass kpi">
+          <div class="label">Tokens today</div>
+          <div class="val">1.2M</div>
+          <div class="trend">+12%</div>
+        </div>
+        <div class="glass kpi">
+          <div class="label">P50 latency</div>
+          <div class="val">142 <small>ms</small></div>
+          <div class="trend">−8 ms</div>
+        </div>
+      </section>
+
+      <!-- Charts row -->
+      <section class="grid-3">
+
+        <!-- Tokens area chart -->
+        <div class="glass panel">
+          <header>
+            <div>
+              <h3>Tokens · last 7 days</h3>
+              <div class="hint">Streamed across all agents</div>
+            </div>
+            <div class="legend">
+              <span><span class="sw" style="background:linear-gradient(135deg,hsl(245 80% 62%),hsl(320 80% 62%))"></span> Output</span>
+              <span><span class="sw" style="background:hsl(220 10% 66% / .55)"></span> Input</span>
+            </div>
+          </header>
+          <svg viewBox="0 0 600 220" width="100%" height="240">
+            <defs>
+              <linearGradient id="g1" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%"  stop-color="hsl(275 75% 62%)" stop-opacity=".55"/>
+                <stop offset="100%" stop-color="hsl(275 75% 62%)" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="g2" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%"  stop-color="hsl(245 80% 62%)" stop-opacity=".22"/>
+                <stop offset="100%" stop-color="hsl(245 80% 62%)" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="line" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0%"  stop-color="hsl(245 80% 62%)"/>
+                <stop offset="50%" stop-color="hsl(275 75% 62%)"/>
+                <stop offset="100%" stop-color="hsl(320 80% 62%)"/>
+              </linearGradient>
+            </defs>
+            <g stroke="hsl(230 16% 18%)" stroke-dasharray="3 4">
+              <line x1="0" x2="600" y1="40"  y2="40"/>
+              <line x1="0" x2="600" y1="90"  y2="90"/>
+              <line x1="0" x2="600" y1="140" y2="140"/>
+              <line x1="0" x2="600" y1="190" y2="190"/>
+            </g>
+            <path d="M0,170 C50,150 90,120 130,130 C180,142 220,80 270,90 C320,100 360,50 410,55 C460,60 500,40 540,30 C570,22 600,30 600,30 L600,220 L0,220 Z" fill="url(#g1)"/>
+            <path d="M0,170 C50,150 90,120 130,130 C180,142 220,80 270,90 C320,100 360,50 410,55 C460,60 500,40 540,30 C570,22 600,30 600,30" fill="none" stroke="url(#line)" stroke-width="2.5"/>
+            <path d="M0,200 C60,195 110,180 160,178 C210,175 260,165 310,160 C360,155 410,150 460,140 C510,135 560,130 600,128 L600,220 L0,220 Z" fill="url(#g2)"/>
+            <circle cx="600" cy="30" r="4" fill="hsl(320 80% 62%)"/>
+            <circle cx="600" cy="30" r="9" fill="hsl(320 80% 62%)" fill-opacity=".15"/>
+            <g fill="hsl(220 10% 66%)" font-size="10">
+              <text x="0"   y="212">Mon</text>
+              <text x="100" y="212">Tue</text>
+              <text x="200" y="212">Wed</text>
+              <text x="300" y="212">Thu</text>
+              <text x="400" y="212">Fri</text>
+              <text x="500" y="212">Sat</text>
+              <text x="572" y="212">Sun</text>
+            </g>
+          </svg>
+        </div>
+
+        <!-- Donut node status -->
+        <div class="glass panel">
+          <header>
+            <h3>Node status</h3>
+            <span style="font-size:12px;color:var(--fg-muted)">12 total</span>
+          </header>
+          <div class="status-row">
+            <svg viewBox="0 0 120 120" width="150" height="150" style="transform:rotate(-90deg)">
+              <circle cx="60" cy="60" r="48" fill="none" stroke="hsl(230 22% 14%)" stroke-width="14"/>
+              <circle cx="60" cy="60" r="48" fill="none" stroke="hsl(142 76% 45%)" stroke-width="14"
+                      stroke-dasharray="201 301" stroke-dashoffset="0" stroke-linecap="round"/>
+              <circle cx="60" cy="60" r="48" fill="none" stroke="hsl(38 92% 55%)" stroke-width="14"
+                      stroke-dasharray="75 301" stroke-dashoffset="-201" stroke-linecap="round"/>
+              <circle cx="60" cy="60" r="48" fill="none" stroke="hsl(220 14% 70%)" stroke-width="14"
+                      stroke-dasharray="25 301" stroke-dashoffset="-276" stroke-linecap="round"/>
+            </svg>
+            <ul>
+              <li><span class="dot active"></span>Active <span style="color:var(--fg-muted)">· 8</span></li>
+              <li><span class="dot busy"></span>Busy <span style="color:var(--fg-muted)">· 3</span></li>
+              <li><span class="dot paused"></span>Paused <span style="color:var(--fg-muted)">· 1</span></li>
+              <li><span class="dot error"></span>Error <span style="color:var(--fg-muted)">· 0</span></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Top nodes + live feed -->
+      <section class="grid-3b">
+        <div class="glass panel">
+          <header>
+            <h3>Top nodes by load</h3>
+            <a class="hint" href="#" style="color:var(--fg-muted)">View all →</a>
+          </header>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr><th>Node</th><th>Status</th><th>CPU</th><th>RAM</th><th>GPU</th><th>Tokens</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div style="font-weight:500">gpu-eu-01</div><div class="mono" style="font-size:12px;color:var(--fg-muted)">prod · eu</div></td>
+                  <td><span class="pillstatus"><span class="dot active"></span>Active</span></td>
+                  <td><div class="resbar"><div class="b"><i style="width:62%"></i></div><div class="v">62%</div></div></td>
+                  <td><div class="resbar"><div class="b"><i style="width:48%"></i></div><div class="v">48%</div></div></td>
+                  <td><div class="resbar"><div class="b"><i style="width:81%"></i></div><div class="v">81%</div></div></td>
+                  <td class="mono" style="font-size:12px">48,300</td>
+                </tr>
+                <tr>
+                  <td><div style="font-weight:500">cpu-us-01</div><div class="mono" style="font-size:12px;color:var(--fg-muted)">prod · us</div></td>
+                  <td><span class="pillstatus"><span class="dot busy"></span>Busy</span></td>
+                  <td><div class="resbar"><div class="b"><i style="width:91%"></i></div><div class="v">91%</div></div></td>
+                  <td><div class="resbar"><div class="b"><i style="width:70%"></i></div><div class="v">70%</div></div></td>
+                  <td style="font-size:12px;color:var(--fg-muted)">—</td>
+                  <td class="mono" style="font-size:12px">21,800</td>
+                </tr>
+                <tr>
+                  <td><div style="font-weight:500">gpu-eu-02</div><div class="mono" style="font-size:12px;color:var(--fg-muted)">prod · eu</div></td>
+                  <td><span class="pillstatus"><span class="dot active"></span>Active</span></td>
+                  <td><div class="resbar"><div class="b"><i style="width:34%"></i></div><div class="v">34%</div></div></td>
+                  <td><div class="resbar"><div class="b"><i style="width:28%"></i></div><div class="v">28%</div></div></td>
+                  <td><div class="resbar"><div class="b"><i style="width:55%"></i></div><div class="v">55%</div></div></td>
+                  <td class="mono" style="font-size:12px">12,140</td>
+                </tr>
+                <tr>
+                  <td><div style="font-weight:500">local-dev</div><div class="mono" style="font-size:12px;color:var(--fg-muted)">dev</div></td>
+                  <td><span class="pillstatus"><span class="dot paused"></span>Paused</span></td>
+                  <td style="font-size:12px;color:var(--fg-muted)">—</td>
+                  <td style="font-size:12px;color:var(--fg-muted)">—</td>
+                  <td style="font-size:12px;color:var(--fg-muted)">—</td>
+                  <td class="mono" style="font-size:12px">0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="glass panel">
+          <header>
+            <h3>Live feed</h3>
+            <span class="livetag"><span class="dot active"></span>live</span>
+          </header>
+          <ul class="feed">
+            <li>
+              <span class="pin" style="background:var(--active)"></span>
+              <div>
+                agent <b>Sales Copilot</b> completed conversation
+                <div class="meta">812 out tokens · 14:22</div>
+              </div>
+            </li>
+            <li>
+              <span class="pin" style="background:var(--busy)"></span>
+              <div>
+                node <b>gpu-eu-01</b> CPU 82% · auto-scaled
+                <div class="meta">14:21</div>
+              </div>
+            </li>
+            <li>
+              <span class="pin" style="background:var(--active)"></span>
+              <div>
+                webhook delivered → <span class="mono" style="font-size:12px">hubspot.com</span>
+                <div class="meta">200 OK · 14:20</div>
+              </div>
+            </li>
+            <li>
+              <span class="pin" style="background:linear-gradient(135deg,hsl(245 80% 62%),hsl(320 80% 62%))"></span>
+              <div>
+                API key <span class="mono" style="font-size:12px">sk_live_…f3a2</span> created
+                <div class="meta">by you · 14:18</div>
+              </div>
+            </li>
+            <li>
+              <span class="pin" style="background:var(--paused)"></span>
+              <div>
+                node <b>local-dev</b> paused
+                <div class="meta">14:12</div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+</body>
+</html>
